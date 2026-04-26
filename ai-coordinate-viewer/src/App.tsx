@@ -10783,11 +10783,17 @@ function App() {
         return content;
       });
 
-      return {
-        ...region,
-        id: `${region.id}_copy_${childMotherId}`, // Unique ID for copied region
-        contents: [] // Clear contents - will be populated by handleCreateNewMotherForOverflow
+      // Deep clear contents from region and all its children (slices)
+      const clearContents = (r: any): any => {
+        const { children, ...rest } = r;
+        return {
+          ...rest,
+          id: `${r.id}_copy_${childMotherId}`,
+          contents: [],
+          ...(children ? { children: children.map((ch: any) => clearContents(ch)) } : {})
+        };
       };
+      return clearContents(region);
     });
 
     // Calculate position for new mother
