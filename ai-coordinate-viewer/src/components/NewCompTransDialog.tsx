@@ -3076,6 +3076,7 @@ const NewCompTransDialog: React.FC<NewCompTransDialogProps> = ({
       // STEP 0: Detect if this is from Region or Slice
       console.log('🔍 2in1: Detecting source type - Region or Slice?');
       console.log('🔍 2in1: regionId:', regionId);
+      console.log(`[ETT-SPLIT-BUG] 2in1 STARTED: regionId=${regionId}`);
 
       let isFromSlice = false;
       let isFromRegion = false;
@@ -3133,6 +3134,7 @@ const NewCompTransDialog: React.FC<NewCompTransDialogProps> = ({
         sourceType = 'REGION';
       }
 
+      console.log(`[ETT-SPLIT-BUG] 2in1 SOURCE TYPE: ${sourceType} (slice=${isFromSlice}, region=${isFromRegion})`);
 
       // ==========================================
       // 🔷 SLICE OVERFLOW LOGIC
@@ -3381,6 +3383,11 @@ const NewCompTransDialog: React.FC<NewCompTransDialogProps> = ({
 
         delete (window as any).__temp2in1Config;
 
+        console.log(`[ETT-SPLIT-BUG] SLICE 2in1 N-SPLIT: totalSplits=${sliceNSplitResult.totalSplits}, hasOverflow=${sliceNSplitResult.hasOverflow}`);
+        sliceNSplitResult.textSplits.forEach((split, idx) => {
+          console.log(`[ETT-SPLIT-BUG] SLICE SPLIT[${idx}]: ${split.length} chars, first80="${split.substring(0, 80)}"`);
+        });
+
         if (!sliceNSplitResult.hasOverflow || sliceNSplitResult.totalSplits === 1) {
 
           const sliceSaveConfig = {
@@ -3420,6 +3427,7 @@ const NewCompTransDialog: React.FC<NewCompTransDialogProps> = ({
         };
 
         sliceOnSave(sliceSplit1Config, regionId);
+        console.log(`[ETT-SPLIT-BUG] SLICE SAVE SPLIT1: regionId=${regionId}, textLen=${sliceNSplitResult.textSplits[0].length}, first80="${sliceNSplitResult.textSplits[0].substring(0, 80)}"`);
         await new Promise(resolve => setTimeout(resolve, 500));
 
         // Create child mothers for overflow (split2, split3, etc.)
@@ -3467,10 +3475,26 @@ const NewCompTransDialog: React.FC<NewCompTransDialogProps> = ({
         }
 
 
+        // Store config for handleCreateNewMotherForOverflow to use
+        // CRITICAL: Without this, handleCreateNewMotherForOverflow falls back to reading
+        // from parent's main regions (which may have stale content) instead of using the
+        // correct split config. This was missing in the SLICE path but present in REGION path.
+        (window as any).__current2in1Config = {
+          ...config,
+          textContent: {
+            ...config.textContent,
+            originalText: sliceNSplitResult.textSplits[0],
+            generatedText: sliceNSplitResult.textSplits[0]
+          }
+        };
+        console.log(`[ETT-SPLIT-BUG] SLICE STORED __current2in1Config: generatedText=${sliceNSplitResult.textSplits[0]?.substring(0, 80)}`);
+
         for (let i = 0; i < sliceCreatedChildIds.length; i++) {
           const childMotherId = sliceCreatedChildIds[i];
           const splitIndex = i + 1;
           const textForChild = sliceNSplitResult.textSplits[splitIndex] || '';
+
+          console.log(`[ETT-SPLIT-BUG] SLICE ASSIGN: child=${childMotherId}, splitIndex=${splitIndex}, textLen=${textForChild.length}, first80="${textForChild.substring(0, 80)}"`);
 
           if (onCreateNewMother && childMotherId && textForChild) {
             // Verify child is ready
@@ -3513,6 +3537,10 @@ const NewCompTransDialog: React.FC<NewCompTransDialogProps> = ({
             }
           }
         }
+
+        // Clean up stored config
+        delete (window as any).__current2in1Config;
+        console.log(`[ETT-SPLIT-BUG] SLICE CLEANED UP __current2in1Config`);
 
         // Final canvas refresh
         if ((window as any).refreshCanvas) {
@@ -3799,6 +3827,10 @@ const NewCompTransDialog: React.FC<NewCompTransDialogProps> = ({
       delete (window as any).__temp2in1Config;
 
       console.log('📊 2in1: totalSplits =', nSplitResult.totalSplits, ', hasOverflow =', nSplitResult.hasOverflow);
+      console.log(`[ETT-SPLIT-BUG] 2in1 N-SPLIT RESULT: totalSplits=${nSplitResult.totalSplits}, hasOverflow=${nSplitResult.hasOverflow}`);
+      nSplitResult.textSplits.forEach((split, idx) => {
+        console.log(`[ETT-SPLIT-BUG] 2in1 SPLIT[${idx}]: ${split.length} chars, first80="${split.substring(0, 80)}"`);
+      });
 
       // STEP 3: Check if overflow exists
       if (!nSplitResult.hasOverflow || nSplitResult.totalSplits === 1) {
@@ -4076,6 +4108,7 @@ const NewCompTransDialog: React.FC<NewCompTransDialogProps> = ({
 
       // STEP 6.5: Store current config in window for child creation to use
       console.log('📦 2in1: Storing current config for child creation');
+      console.log(`[ETT-SPLIT-BUG] 2in1 STORED CONFIG: generatedText=${config.textContent?.generatedText?.substring(0, 80)}, originalText=${config.textContent?.originalText?.substring(0, 80)}`);
       (window as any).__current2in1Config = {
         ...config,
         textContent: {
@@ -4095,6 +4128,7 @@ const NewCompTransDialog: React.FC<NewCompTransDialogProps> = ({
         const textForChild = nSplitResult.textSplits[splitIndex] || '';
 
         console.log(`📤 2in1: Assigning split ${splitIndex + 1} to ${childMotherId} (${textForChild.length} chars)`);
+        console.log(`[ETT-SPLIT-BUG] 2in1 ASSIGN: child=${childMotherId}, splitIndex=${splitIndex}, textLen=${textForChild.length}, first80="${textForChild.substring(0, 80)}"`);
 
         if (onCreateNewMother && childMotherId && textForChild) {
           // CHECK-BASED: Verify child is ready before assigning text

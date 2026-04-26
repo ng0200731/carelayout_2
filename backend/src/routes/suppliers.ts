@@ -90,8 +90,8 @@ router.post('/', async (req, res) => {
     const supplier = await prisma.supplier.create({
       data: {
         name,
-        contactInfo,
-        capabilities,
+        contactInfo: JSON.stringify(contactInfo) as any,
+        capabilities: capabilities ? JSON.stringify(capabilities) as any : undefined,
         userId: req.user!.id,
       },
       include: {
@@ -135,7 +135,7 @@ router.put('/:id', async (req, res) => {
 
     const supplier = await prisma.supplier.update({
       where: { id },
-      data: { name, contactInfo, capabilities },
+      data: { name, contactInfo: JSON.stringify(contactInfo) as any, capabilities: capabilities ? JSON.stringify(capabilities) as any : undefined },
       include: {
         user: {
           select: { id: true, username: true, email: true }

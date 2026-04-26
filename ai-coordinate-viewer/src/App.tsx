@@ -2268,9 +2268,22 @@ function App() {
       if (contentIndex !== -1) {
         const contents = newContents.get(regionId) || [];
         const updatedContents = [...contents];
+        const entryToClear = updatedContents[contentIndex];
+        const clearSync = (entryToClear.type === 'new-comp-trans' && entryToClear.newCompTransConfig)
+          ? {
+              newCompTransConfig: {
+                ...entryToClear.newCompTransConfig,
+                textContent: {
+                  ...(entryToClear.newCompTransConfig.textContent || {}),
+                  generatedText: '',
+                }
+              }
+            }
+          : {};
         updatedContents[contentIndex] = {
-          ...updatedContents[contentIndex],
-          content: { ...updatedContents[contentIndex].content, text: '' }
+          ...entryToClear,
+          content: { ...entryToClear.content, text: '' },
+          ...clearSync
         };
         newContents.set(regionId, updatedContents);
         console.log(`🗑️ Cleared position ${index}: ${regionId}/${contentId}`);
@@ -2361,9 +2374,22 @@ function App() {
         const contentIndex = updatedContents.findIndex((c: any) => c.id === contentId);
 
         if (contentIndex !== -1) {
+          const entryToClear = updatedContents[contentIndex];
+          const clearSync = (entryToClear.type === 'new-comp-trans' && entryToClear.newCompTransConfig)
+            ? {
+                newCompTransConfig: {
+                  ...entryToClear.newCompTransConfig,
+                  textContent: {
+                    ...(entryToClear.newCompTransConfig.textContent || {}),
+                    generatedText: '',
+                  }
+                }
+              }
+            : {};
           updatedContents[contentIndex] = {
-            ...updatedContents[contentIndex],
-            content: { ...updatedContents[contentIndex].content, text: '' }
+            ...entryToClear,
+            content: { ...entryToClear.content, text: '' },
+            ...clearSync
           };
           newContents.set(regionId, updatedContents);
           console.log(`🗑️ Cleared position ${index}: ${regionId}/${contentId}`);
@@ -2480,21 +2506,36 @@ function App() {
       // Update content with fitted text
       const updatedContents = [...targetContents];
       const isInitiatorPosition = position === 0;
+      const targetEntry = updatedContents[targetContentIndex];
+
+      // Sync generatedText for new-comp-trans content so rendering shows the split text
+      const compTransSync = (targetEntry.type === 'new-comp-trans' && targetEntry.newCompTransConfig)
+        ? {
+            newCompTransConfig: {
+              ...targetEntry.newCompTransConfig,
+              textContent: {
+                ...(targetEntry.newCompTransConfig.textContent || {}),
+                generatedText: fitting,
+              }
+            }
+          }
+        : {};
 
       updatedContents[targetContentIndex] = {
-        ...updatedContents[targetContentIndex],
+        ...targetEntry,
         content: {
-          ...updatedContents[targetContentIndex].content,
+          ...targetEntry.content,
           text: fitting,
           // Store original text only in the initiator (#1)
           ...(isInitiatorPosition && { originalText: originalText })
         },
+        ...compTransSync,
         typography: { ...masterTypography },
         layout: { ...masterLayout }
       };
       newContents.set(targetRegionId, updatedContents);
 
-      console.log(`✅ Updated #${position + 1} (${targetRegionId}) with ${fitting.length} chars`);
+      console.log(`✅ Updated #${position + 1} (${targetRegionId}) with ${fitting.length} chars, generatedText synced: ${!!Object.keys(compTransSync).length}`);
 
       // Move overflow to next position
       currentText = overflow;
@@ -2591,9 +2632,22 @@ function App() {
         const contentIndex = updatedContents.findIndex((c: any) => c.id === contentId);
 
         if (contentIndex !== -1) {
+          const entryToClear = updatedContents[contentIndex];
+          const clearSync = (entryToClear.type === 'new-comp-trans' && entryToClear.newCompTransConfig)
+            ? {
+                newCompTransConfig: {
+                  ...entryToClear.newCompTransConfig,
+                  textContent: {
+                    ...(entryToClear.newCompTransConfig.textContent || {}),
+                    generatedText: '',
+                  }
+                }
+              }
+            : {};
           updatedContents[contentIndex] = {
-            ...updatedContents[contentIndex],
-            content: { ...updatedContents[contentIndex].content, text: '' }
+            ...entryToClear,
+            content: { ...entryToClear.content, text: '' },
+            ...clearSync
           };
           newContents.set(regionId, updatedContents);
           console.log(`🗑️ Cleared position ${index}: ${regionId}/${contentId}`);
@@ -2735,9 +2789,22 @@ function App() {
 
       // Update content with fitted text AND inherit ALL master properties
       const updatedContents = [...targetContents];
+      const recalcEntry = updatedContents[targetContentIndex];
+      const recalcSync = (recalcEntry.type === 'new-comp-trans' && recalcEntry.newCompTransConfig)
+        ? {
+            newCompTransConfig: {
+              ...recalcEntry.newCompTransConfig,
+              textContent: {
+                ...(recalcEntry.newCompTransConfig.textContent || {}),
+                generatedText: fitting,
+              }
+            }
+          }
+        : {};
       updatedContents[targetContentIndex] = {
-        ...updatedContents[targetContentIndex],
-        content: { ...updatedContents[targetContentIndex].content, text: fitting },
+        ...recalcEntry,
+        content: { ...recalcEntry.content, text: fitting },
+        ...recalcSync,
         typography: { ...masterTypography }, // Inherit ALL master typography
         layout: { ...masterLayout } // Inherit ALL master layout
       };
@@ -10719,7 +10786,7 @@ function App() {
       return {
         ...region,
         id: `${region.id}_copy_${childMotherId}`, // Unique ID for copied region
-        contents: updatedContents
+        contents: [] // Clear contents - will be populated by handleCreateNewMotherForOverflow
       };
     });
 
@@ -11010,6 +11077,22 @@ function App() {
         }
       }
     };
+
+    // 🔍 DEBUG: Verify child content has the correct split text
+    console.log(`🧬 OVERFLOW_SPLIT_DEBUG: Child content created for ${childMotherId}:`, {
+      childRegionId: firstRegion.id,
+      textContentParam: textContent.substring(0, 80),
+      textContentParamLen: textContent.length,
+      childGeneratedText: childContent.newCompTransConfig?.textContent?.generatedText?.substring(0, 80),
+      childGeneratedTextLen: childContent.newCompTransConfig?.textContent?.generatedText?.length || 0,
+      childContentText: childContent.content?.text?.substring(0, 80),
+      childContentTextLen: childContent.content?.text?.length || 0,
+      parentMotherId,
+      originalGeneratedText: originalContent.newCompTransConfig?.textContent?.generatedText?.substring(0, 80),
+    });
+    console.log(`[ETT-SPLIT-BUG] handleCreateNewMother: child=${childMotherId}, regionId=${firstRegion.id}, textLen=${textContent.length}, generatedTextLen=${childContent.newCompTransConfig?.textContent?.generatedText?.length || 0}, first80="${textContent.substring(0, 80)}"`);
+    console.log(`[ETT-SPLIT-BUG] handleCreateNewMother: originalContent.generatedText="${originalContent.newCompTransConfig?.textContent?.generatedText?.substring(0, 80)}"`);
+    console.log(`[ETT-SPLIT-BUG] handleCreateNewMother: stored2in1Config exists=${!!stored2in1Config}, sourceRegionId=${sourceRegionId}`);
 
     // Add to child region in GLOBAL DATA (same as parent) instead of React state
 
@@ -16908,7 +16991,16 @@ function App() {
 
                   {/* Full Region Text Content - Fill entire region like text-area */}
                   {showPreview && (() => {
-                    const regionContentsArray = regionContents.get(region.id) || [];
+                    let regionContentsArray = regionContents.get(region.id) || [];
+                    // Fallback: for overflow child mothers, read content from region.contents directly
+                    // if regionContents Map doesn't have it (timing issue during 2in1)
+                    if (regionContentsArray.length === 0 && (obj as any).isOverflowChild && (region as any).contents?.length > 0) {
+                      regionContentsArray = (region as any).contents.filter((c: any) => c.type === 'new-comp-trans' || c.type === 'new-multi-line' || c.type === 'new-line-text');
+                      if (regionContentsArray.length > 0) {
+                        console.log(`🔄 OVERFLOW_FALLBACK: Using region.contents for ${(obj as any).name} region ${region.id}`);
+                        console.log(`[ETT-SPLIT-BUG] RENDER-FALLBACK: mother=${(obj as any).name}, regionId=${region.id}, contentCount=${regionContentsArray.length}`);
+                      }
+                    }
                     if (regionContentsArray.length === 0) return null;
 
                     return regionContentsArray.map((content: any, contentIndex: number) => {
@@ -16936,6 +17028,7 @@ function App() {
                             firstLine: displayText.split('\n')[0],
                             totalLines: displayText.split('\n').length
                           });
+                          console.log(`[ETT-SPLIT-BUG] RENDER: mother=${obj.name}, regionId=${region.id}, textLen=${displayText.length}, firstLine="${displayText.split('\n')[0].substring(0, 80)}"`);
                         }
                         // Reduced logging frequency - only log occasionally to reduce console noise
                         if (Math.random() < 0.01) { // Only log 1% of the time
