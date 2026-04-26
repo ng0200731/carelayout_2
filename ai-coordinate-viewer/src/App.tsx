@@ -9151,13 +9151,14 @@ function App() {
                       if (overflowContent) {
                         (window as any).__current2in1Config = JSON.parse(JSON.stringify({
                           ...overflowContent.newCompTransConfig,
+                          sourceRegionId: actualRegionId,
                           textContent: {
                             ...overflowContent.newCompTransConfig.textContent,
                             originalText: multiLanguageText, // Store FULL text
                             generatedText: multiLanguageText
                           }
                         }));
-                        console.log('✅ Preview: Stored original config (deep copy) in window for child creation');
+                        console.log('✅ Preview: Stored original config (deep copy) in window for child creation, sourceRegionId:', actualRegionId);
                       }
 
                       // Update parent with split1 text
@@ -10903,14 +10904,7 @@ function App() {
 
     console.log(`[v${packageJson.version}] 📝 Adding text content (${textContent.length} chars): "${textContent.substring(0, 50)}..."`);
 
-    // Get the first region of the child mother
-    const firstRegion = (childMother as any).regions?.[0];
-    if (!firstRegion) {
-      console.error(`❌ No regions found in child mother: ${childMotherId}`);
-      return;
-    }
-
-    // Find parent mother to get original content configuration
+    // Find parent mother early (needed for both slice lookup and content config)
     const parentMotherId = (childMother as any).parentMotherId;
     let parentMother: AIObject | null = null;
     for (const obj of currentData.objects) {
@@ -10925,9 +10919,60 @@ function App() {
       return;
     }
 
+    // Find where comp-trans content lives in the parent mother - could be a main region or a slice
+    // Search regionContents for comp-trans in parent's regions and their children (slices)
+    const childRegions = (childMother as any).regions || [];
+    let targetRegion = childRegions[0]; // Default: first region
+    let sourceSliceIndex = -1;
+    let sourceParentRegion: any = null;
+
+    const parentRegions = (parentMother as any).regions || [];
+    for (const region of parentRegions) {
+      // Check slices (children) first — content is most likely in a slice if region is sliced
+      if (region.children && region.children.length > 0) {
+        for (let si = 0; si < region.children.length; si++) {
+          const sliceContents = regionContents.get(region.children[si].id) || [];
+          if (sliceContents.some((c: any) => c.type === 'new-comp-trans')) {
+            sourceSliceIndex = si;
+            sourceParentRegion = region;
+            break;
+          }
+        }
+        if (sourceSliceIndex >= 0) break;
+      }
+      // Check main region
+      const mainContents = regionContents.get(region.id) || [];
+      if (mainContents.some((c: any) => c.type === 'new-comp-trans')) {
+        sourceSliceIndex = -1; // Main region, not a slice
+        sourceParentRegion = region;
+        break;
+      }
+    }
+
+    if (sourceSliceIndex >= 0 && sourceParentRegion) {
+      // Content is in a slice — find the corresponding copied parent region in the child mother
+      const copiedParentRegion = childRegions.find((r: any) =>
+        r.id === `${sourceParentRegion.id}_copy_${childMotherId}`
+      );
+      if (copiedParentRegion?.children?.[sourceSliceIndex]) {
+        targetRegion = copiedParentRegion.children[sourceSliceIndex];
+        console.log(`✅ Source is slice index ${sourceSliceIndex} in ${sourceParentRegion.id}, targeting child slice: ${targetRegion.id}`);
+      } else {
+        console.log(`⚠️ Could not find matching slice in child, falling back to first region`);
+      }
+    }
+
+    if (!targetRegion) {
+      console.error(`❌ No target region found in child mother: ${childMotherId}`);
+      return;
+    }
+    console.log(`🎯 Target region for content: ${targetRegion.id}`);
+
     // PRIORITY 1: Check if 2in1 stored the current config in window
     let originalContent: any = null;
-    let sourceRegionId = '';
+    let sourceRegionId = sourceSliceIndex >= 0 && sourceParentRegion
+      ? sourceParentRegion.children[sourceSliceIndex].id
+      : (sourceParentRegion?.id || '');
 
     const stored2in1Config = (window as any).__current2in1Config;
     if (stored2in1Config) {
@@ -11049,7 +11094,7 @@ function App() {
     const childContent = {
       ...originalContent, // Copy everything (materials, languages, typography, etc.)
       id: `child_${Date.now()}`, // New ID
-      regionId: firstRegion.id, // New region ID
+      regionId: targetRegion.id,
       content: {
         ...originalContent.content,
         text: textContent // Only the text content
@@ -11086,7 +11131,7 @@ function App() {
 
     // 🔍 DEBUG: Verify child content has the correct split text
     console.log(`🧬 OVERFLOW_SPLIT_DEBUG: Child content created for ${childMotherId}:`, {
-      childRegionId: firstRegion.id,
+      childRegionId: targetRegion.id,
       textContentParam: textContent.substring(0, 80),
       textContentParamLen: textContent.length,
       childGeneratedText: childContent.newCompTransConfig?.textContent?.generatedText?.substring(0, 80),
@@ -11096,24 +11141,24 @@ function App() {
       parentMotherId,
       originalGeneratedText: originalContent.newCompTransConfig?.textContent?.generatedText?.substring(0, 80),
     });
-    console.log(`[ETT-SPLIT-BUG] handleCreateNewMother: child=${childMotherId}, regionId=${firstRegion.id}, textLen=${textContent.length}, generatedTextLen=${childContent.newCompTransConfig?.textContent?.generatedText?.length || 0}, first80="${textContent.substring(0, 80)}"`);
+    console.log(`[ETT-SPLIT-BUG] handleCreateNewMother: child=${childMotherId}, regionId=${targetRegion.id}, textLen=${textContent.length}, generatedTextLen=${childContent.newCompTransConfig?.textContent?.generatedText?.length || 0}, first80="${textContent.substring(0, 80)}"`);
     console.log(`[ETT-SPLIT-BUG] handleCreateNewMother: originalContent.generatedText="${originalContent.newCompTransConfig?.textContent?.generatedText?.substring(0, 80)}"`);
     console.log(`[ETT-SPLIT-BUG] handleCreateNewMother: stored2in1Config exists=${!!stored2in1Config}, sourceRegionId=${sourceRegionId}`);
 
     // Add to child region in GLOBAL DATA (same as parent) instead of React state
 
     // Add content to the child region in global data structure
-    if (!firstRegion.contents) {
-      firstRegion.contents = [];
+    if (!targetRegion.contents) {
+      targetRegion.contents = [];
     }
-    firstRegion.contents = [childContent];
-    
+    targetRegion.contents = [childContent];
+
     // Update BOTH global app data AND React state for proper rendering
     if ((window as any).updateAppData) {
       (window as any).updateAppData(currentData);
-      console.log(`✅ Child content stored in global data for region: ${firstRegion.id}`);
+      console.log(`✅ Child content stored in global data for region: ${targetRegion.id}`);
     }
-    
+
     // ALSO update React state so canvas can render the child content
     console.log(`🎨 Also updating React state for canvas rendering...`);
     console.log(`🔍 BEFORE update - regionContents Map size: ${regionContents.size}`);
@@ -11122,11 +11167,11 @@ function App() {
     // CRITICAL FIX: Preserve ALL existing region contents when updating React state
     setRegionContents(prevContents => {
       const updatedContents = new Map(prevContents); // Copy ALL existing contents
-      updatedContents.set(firstRegion.id, [childContent]); // Add/update only this region
+      updatedContents.set(targetRegion.id, [childContent]); // Add/update only this region
 
       console.log(`🔍 AFTER update - regionContents Map size: ${updatedContents.size}`);
       console.log(`🔍 AFTER update - all regions in Map:`, Array.from(updatedContents.keys()));
-      console.log(`✅ Child content added to React state for region: ${firstRegion.id} while preserving other regions`);
+      console.log(`✅ Child content added to React state for region: ${targetRegion.id} while preserving other regions`);
 
       return updatedContents;
     });
@@ -18733,12 +18778,60 @@ function App() {
                   const toMother = chain[i + 1];
                   if (!fromMother || !toMother) continue;
 
-                  // Calculate connection points: right edge midpoint to left edge midpoint
+                  // Find which region/slice has comp-trans content in fromMother
+                  let fromSliceY: number | null = null;
+                  let toSliceY: number | null = null;
+                  const fromRegions = (fromMother as any).regions || [];
+                  for (const region of fromRegions) {
+                    // Check main region
+                    const mainContents = regionContents.get(region.id) || [];
+                    if (mainContents.some((c: any) => c.type === 'new-comp-trans')) {
+                      fromSliceY = region.y + region.height / 2;
+                      break;
+                    }
+                    // Check slices (children)
+                    if (region.children) {
+                      for (const child of region.children) {
+                        const childContents = regionContents.get(child.id) || [];
+                        if (childContents.some((c: any) => c.type === 'new-comp-trans')) {
+                          fromSliceY = child.y + child.height / 2;
+                          break;
+                        }
+                      }
+                      if (fromSliceY !== null) break;
+                    }
+                  }
+
+                  // Find corresponding region/slice in toMother
+                  const toRegions = (toMother as any).regions || [];
+                  for (const region of toRegions) {
+                    const mainContents = regionContents.get(region.id) || [];
+                    if (mainContents.some((c: any) => c.type === 'new-comp-trans')) {
+                      toSliceY = region.y + region.height / 2;
+                      break;
+                    }
+                    if (region.children) {
+                      for (const child of region.children) {
+                        const childContents = regionContents.get(child.id) || [];
+                        if (childContents.some((c: any) => c.type === 'new-comp-trans')) {
+                          toSliceY = child.y + child.height / 2;
+                          break;
+                        }
+                      }
+                      if (toSliceY !== null) break;
+                    }
+                  }
+
+                  // Calculate connection points: use slice Y if found, otherwise mother center
                   const fromRightX = (fromMother.x + fromMother.width) * scale + panX;
-                  const fromMidY = (fromMother.y + fromMother.height / 2) * scale + panY;
+                  const fromMidY = fromSliceY !== null
+                    ? (fromMother.y + fromSliceY) * scale + panY
+                    : (fromMother.y + fromMother.height / 2) * scale + panY;
 
                   const toLeftX = toMother.x * scale + panX;
-                  const toMidY = (toMother.y + toMother.height / 2) * scale + panY;
+                  const toMidY = toSliceY !== null
+                    ? (toMother.y + toSliceY) * scale + panY
+                    : (toMother.y + toMother.height / 2) * scale + panY;
 
                   const linkKey = `overflow-link-${fromMother.name}-${toMother.name}`;
 
